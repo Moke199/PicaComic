@@ -33,8 +33,55 @@ jobs:
           architecture: x64
       - run: sudo xcode-select --switch /Applications/Xcode_16.4.app
       - run: flutter pub get
+
+      # 1. 编译 macOS 应用，保持原样
       - run: flutter build macos --release
+
+      # 2. 创建 DMG 打包目录，并移动 .app 文件
+      - name: Prepare DMG Directory
+        run: |
+          mkdir -p dmg_folder
+          mv build/macos/Build/Products/Release/pica_comic.app dmg_folder/
+          # 创建指向”应用程序“文件夹的快捷方式，方便拖拽安装
+          ln -s /Applications dmg_folder/
+
+      # 3. 准备背景图和打包脚本
+      - name: Prepare Background & Script
+        run: |
+          # 创建一个简单的磁盘映像 AppleScript 打包命令
+          # 如果你有漂亮背景图也可以拷进去，这里先创建一个空的
+          touch dmg_folder/background.png
+          
+          # 创建一个用于调整 .app 位置的无障碍声明
+          echo 'tell application "Finder"
+            tell disk "'PicaComic'"
+              open
+              set current view of container window to icon view
+              set toolbar visible of container window to false
+              set statusbar visible of container window to false
+              set the bounds of container window to {100, 100, 600, 400}
+              set theViewOptions to the icon view options of container window
+              set arrangement of theViewOptions to not arranged
+              set icon size of theViewOptions to 72
+              set background picture of theViewOptions to file ".background:background.png"
+              set position of item "pica_comic.app" of container window to {140, 170}
+              set position of item "Applications" of container window to {380, 170}
+              update without registering applications
+              delay 5
+            end tell
+          end tell' > dmg_create.scpt
+
+      # 4. 使用 hdiutil 一键打包成 DMG
+      - name: Create DMG File
+        run: |
+          hdiutil create -volname "PicaComic" \
+            -srcfolder dmg_folder \
+            -ov -format UDZO \
+            -imagekey zlib-level=9 \
+            "PicaComic.dmg"
+
+      # 5. 上传最终的 DMG 文件
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-build.zip
-          path: build/macos/Build/Products/Release/pica_comic.app
+          name: PicaComic.dmg
+          path: PicaComic.dmg
